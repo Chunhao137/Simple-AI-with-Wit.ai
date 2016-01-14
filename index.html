@@ -1,0 +1,221 @@
+  <html>
+  <head>
+    <link rel="stylesheet" href="microphone/microphone.min.css">
+    <link rel="stylesheet" type="text/css" href="microphone/style.css">
+  </head>
+  <body style="text-align: center;" >
+    <center><div id="microphone"></div></center>
+    <div id="info"></div>
+    <br>
+    <img style="width:300px;height:500px;"src="https://upload.wikimedia.org/wikipedia/commons/thumb/e/ec/Mona_Lisa,_by_Leonardo_da_Vinci,_from_C2RMF_retouched.jpg/687px-Mona_Lisa,_by_Leonardo_da_Vinci,_from_C2RMF_retouched.jpg" id="roateImage">
+    <div id="main"></div>
+    <div id="image"></div>
+
+    <div id="error"></div>
+    <script src="microphone/microphone.min.js"></script>
+    <script src="microphone/jquery-1.12.0.js"></script>
+    <script src="microphone/linear-partition.js"></script>
+    <script src="microphone/jquery-rotate.js"></script>
+
+
+    <script>
+      var photos; 
+      var floodDOM = function(){
+        document.getElementById('image').innerHTML = "";
+        viewport_width = window.innerWidth - 100;
+        ideal_height = parseInt(window.innerHeight / 2);
+        summed_width = photos.reduce((function(sum, p) {
+          return sum += p.ar * ideal_height;
+        }), 0);
+        rows = Math.round(summed_width / viewport_width);
+
+        weights = photos.map(function(p) {
+          return parseInt(p.ar * 100);
+        });
+        partition = part(weights, rows);
+
+        index = 0;
+        x = photos.slice(0);
+        row_buffer = [];
+        
+        for (var i = 0; i < partition.length; i++) {
+          // console.log(partition[i])
+          var summed_ratios;
+          row_buffer = [];
+          for (var j = 0; j<partition[i].length; j++) {
+            row_buffer.push(photos[index++])
+          };
+          summed_ratios = row_buffer.reduce((function(sum, p) {
+            return sum += p.ar;
+          }), 0);
+          for (var k = 0; k<row_buffer.length; k++) {
+            // console.log(row_buffer[k])
+            photo = row_buffer[k]
+            elem = document.createElement("div");
+            elem.style.backgroundImage="url('"+x.shift().src+"')";
+            elem.style.width = parseInt(viewport_width / summed_ratios * photo.ar)+"px";
+            elem.style.height = parseInt(viewport_width / summed_ratios)+"px";
+            elem.setAttribute("class", "photo");
+            // console.log(elem, parseInt(viewport_width / summed_ratios * photo.ar) / parseInt(viewport_width / summed_ratios));
+
+            document.getElementById('image').appendChild(elem)
+          };
+        }
+
+        console.log({'viewport_width': viewport_width, 'ideal_height': ideal_height, 'summed_width': summed_width, 'rows': rows, 'weights': weights, 'partition': partition, "row_buffer": row_buffer})
+    }
+      var mic = new Wit.Microphone(document.getElementById("microphone"));
+      var info = function (msg) {
+        document.getElementById("info").innerHTML = msg;
+      };
+      var error = function (msg) {
+        document.getElementById("error").innerHTML = msg;
+      };
+      mic.onready = function () {
+        info("Microphone is ready to record");
+      };
+      mic.onaudiostart = function () {
+        info("Recording started");
+        error("");
+      };
+      mic.onaudioend = function () {
+        info("Recording stopped, processing started");
+      };
+      mic.onresult = function (intent, entities) {
+        if(intent==='rotate_'){
+          $('#roateImage').rotate(entities.number.value)
+        }
+        if(intent==='change_background'){
+           $('body').css("background-color",entities.search_query.value);
+        }
+        if(intent==="weather"){
+          $("#main").empty();
+          $("#image").empty();
+          $('#roateImage').remove();
+          $.ajax({
+            url:'https://query.yahooapis.com/v1/public/yql?q=select%20*%20from%20weather.forecast%20where%20woeid%20in%20(select%20woeid%20from%20geo.places(1)%20where%20text%3D%22'+entities.location.value+'%2C%20il%22)&format=json&env=store%3A%2F%2Fdatatables.org%2Falltableswithkeys', success: function(json_weather){
+            
+                $('<h1>').text(json_weather.query.results.channel.title ).appendTo('#main');
+                $('<h2>').text('Date: ').appendTo('#main');
+                $('#main').append(json_weather.query.results.channel.item.condition.date); 
+                $('<h2>').text('Temperature: ').appendTo('#main');    
+                $('#main').append(json_weather.query.results.channel.item.condition.temp);
+                $('<h2>').text('Wind Chill: ').appendTo('#main');
+                $('#main').append(json_weather.query.results.channel.wind.chill);
+
+            }
+            
+          });
+        }else if(intent==="open_webpage"){
+            if(entities.search_query.value==="google"){
+              window.open("https://www.google.com/")
+            }
+        }else if(intent==="search_google"){
+          $("#main").empty();
+          $("#image").empty();
+          $('#roateImage').remove();
+
+            // URL of Google's AJAX search API
+            var apiURL = 'http://ajax.googleapis.com/ajax/services/search/web?v=1.0&callback=?';
+            
+            $.getJSON(apiURL,{q:entities.search_query.value,rsz:8,start:0},function(r){
+              
+              var results = r.responseData.results;
+              $("#main").empty();
+              $("#main").append('<table border="1" style="width:100%"></table>')
+              for(var i=0; i<results.length; i++){
+                $("table").append('<tr><td>'+results[i].title+'</td> '+'<td><a href='+results[i].unescapedUrl+' target="_blank">link</td></tr>')
+
+              }
+              
+            });
+          }else if(intent==="get_image"){
+            var flickerAPI = "http://api.flickr.com/services/feeds/photos_public.gne?jsoncallback=?";
+            $.getJSON( flickerAPI, {
+              tags: entities.search_query.value,
+              tagmode: "any",
+              format: "json"
+            })
+            .done(function( data ) {
+              $("#main").empty();
+              $("#image").empty();
+              $('#roateImage').remove();
+              imageElements = [];
+              photos = []
+              for(var i=0; i<data.items.length; i++){
+                imageElements[i] = new Image();
+                imageElements[i].setAttribute("class", "image"+i);
+                imageElements[i].onload = function(){
+                  photos.push({src: this.src, ar: this.width / this.height})
+                  // console.log({src: this.src, ar: this.width / this.height});
+                }
+                imageElements[i].src = data.items[i].media.m;
+              }
+              setTimeout(function(){ floodDOM() }, 1000);;
+              
+              window.onresize = function(){floodDOM();}
+            });
+          }else if(intent==='play_video'){
+            $("#main").empty();
+            $("#image").empty();
+            $('#roateImage').remove();
+            var gapikey = 'AIzaSyCKMpw2nmPnon_gkh4EIXnbiAmrZNw-v4M';
+            function search() {
+                // clear 
+                $('#results').html('');
+                $('#buttons').html('');
+                
+                // get form input
+                q = $('#query').val();  // this probably shouldn't be created as a global
+                
+                // run get request on API
+                $.get(
+                  "https://www.googleapis.com/youtube/v3/search", {
+                        part: 'snippet, id',
+                        q: entities.search_query.value,
+                        type: 'video',
+                        key: gapikey
+                    }, function(data) {
+                        var nextPageToken = data.nextPageToken;
+                        var prevPageToken = data.prevPageToken;
+                        
+                        // Log data
+                        console.log(data);
+                        for(var i=0; i<data.items.length; i++){
+                          var iframe = '<iframe width="600" height="400" src="http://www.youtube.com/embed/'+data.items[i].id.videoId+'?autoplay=1&cc_load_policy=1" frameborder="0" allowfullscreen></iframe>'
+                             $('#main').append(iframe);
+                             if(i===0){
+                              return;
+                             }
+
+                        }
+            
+                    });
+            }
+            search()
+          }
+
+      };
+      mic.onerror = function (err) {
+        error("Error: " + err);
+      };
+      mic.onconnecting = function () {
+        info("Microphone is connecting now");
+      };
+      mic.ondisconnected = function () {
+        info("Microphone is not connected");
+      };
+
+      mic.connect("5ACKV7RI3PJUJER6VUW5SB7DYQ23CD6G");
+      // mic.start();
+      // mic.stop();
+
+      function kv (k, v) {
+        if (toString.call(v) !== "[object String]") {
+          v = JSON.stringify(v);
+        }
+        return k + "=" + v + "\n";
+      }
+    </script>
+  </body>
+  </html>
